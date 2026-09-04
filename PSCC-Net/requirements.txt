@@ -1,0 +1,12 @@
+numpy
+torch
+torchvision
+Pillow
+imageio
+opencv-python
+scipy
+scikit-learn
+matplotlib
+lmdb
+yacs
+pycocotools

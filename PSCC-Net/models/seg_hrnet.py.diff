@@ -1,0 +1,21 @@
+--- /tmp/orig_seg_hrnet.py	2026-08-24 18:52:40.631013445 +0000
++++ models/seg_hrnet.py	2026-08-24 18:49:37.837623762 +0000
+@@ -300,7 +300,7 @@
+         self.stage4, pre_stage_channels = self._make_stage(
+             self.stage4_cfg, num_channels, multi_scale_output=True)
+ 
+-        last_inp_channels = np.int(np.sum(pre_stage_channels))
++        last_inp_channels = int(np.sum(pre_stage_channels))
+ 
+     def _make_transition_layer(
+             self, num_channels_pre_layer, num_channels_cur_layer):
+@@ -434,7 +434,8 @@
+                 nn.init.constant_(m.weight, 1)
+                 nn.init.constant_(m.bias, 0)
+         if os.path.isfile(pretrained):
+-            pretrained_dict = torch.load(pretrained)
++            map_loc = None if torch.cuda.is_available() else torch.device('cpu')
++            pretrained_dict = torch.load(pretrained, map_location=map_loc)
+             print('=> loading HRNet pretrained model {}'.format(pretrained))
+             model_dict = self.state_dict()
+             pretrained_dict_used = {}
