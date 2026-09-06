@@ -513,7 +513,7 @@ def save_checkpoint(path, epoch, FENet, SegNet, ClsNet, optimizer, scheduler,
 
 def load_checkpoint(path, FENet, SegNet, ClsNet, optimizer, scheduler, scaler,
                     device):
-    checkpoint = torch.load(path, map_location=device)
+    checkpoint = torch.load(path, map_location=device, weights_only=False)
     FENet.load_state_dict(checkpoint['FENet'])
     SegNet.load_state_dict(checkpoint['SegNet'])
     ClsNet.load_state_dict(checkpoint['ClsNet'])
