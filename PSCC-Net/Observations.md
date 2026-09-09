@@ -196,9 +196,51 @@ The lower threshold improved localization consistently in this run: relative to 
 
 At the selected threshold, ring mIoU was almost equal to interior mIoU (ring minus interior: -0.003 for standard and -0.001 for exchanged). I therefore found no evidence that PSCC-Net localization is mainly driven by the immediate mask boundary. Since 0.3 was the lowest mask threshold I tested, I would report it as the best evaluated value rather than a proven optimum. Mask AP is not expected to change with this operating threshold because it evaluates the continuous mask-score ranking.
 
+### Fine-tuned PSCC-Net results
+
+I evaluated `runs/inpx_finetune/best.pt` on the same 6,823 matched records. The fine-tuned outputs are stored separately under `results/finetuned_best/`, leaving the pretrained results unchanged. The run produced 13,646 rows in `results.csv` and 58 validation/test sensitivity rows in `threshold_sensitivity.csv`.
+
+At the default thresholds, the fine-tuned model produced:
+
+```text
+Classification (threshold = 0.5):
+  standard:  Accuracy = 0.501   AUC = 0.798   Precision = 1.000   Recall = 0.002   F1 = 0.004
+  exchanged: Accuracy = 0.574   AUC = 0.790   Precision = 1.000   Recall = 0.149   F1 = 0.259
+
+Localization (mask threshold = 0.5):
+  standard:  mIoU(full) = 0.000   mAP = 0.168
+  exchanged: mIoU(full) = 0.177   mAP = 0.508
+```
+
+Fine-tuning substantially improved threshold-independent classification ranking for standard images, from pretrained AUC 0.340 to 0.798, and preserved a strong exchanged-image AUC of 0.790. However, the default 0.5 threshold remains poorly calibrated: the model makes almost no positive predictions, giving standard recall 0.002 and exchanged recall 0.149. Fine-tuning did not improve exchanged localization at the fixed mask threshold: mIoU decreased from 0.328 to 0.177 and mAP from 0.575 to 0.508. Standard full mIoU is approximately zero despite nontrivial mask AP, so the continuous localization scores contain some ranking signal but are too low to produce useful binary masks at threshold 0.5.
+
+The validation-selected classification threshold remained 0.05 for both variants. On the held-out test split it produced:
+
+| Variant | Threshold | Accuracy | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Standard | 0.05 | 0.600 | 0.708 | 0.339 | 0.459 |
+| Exchanged | 0.05 | 0.687 | 0.786 | 0.515 | 0.622 |
+
+Validation full mIoU selected mask threshold 0.3 for both variants. Held-out full mIoU at that threshold was 0.001 for standard and 0.198 for exchanged; interior/ring mIoU was 0.001/0.001 for standard and 0.265/0.273 for exchanged. The near-equal exchanged ring and interior scores do not suggest a boundary-only localization shortcut.
+
+### Fine-tuned per-dataset results
+
+| Dataset | Variant | N | Accuracy | AUC | Precision | Recall | F1 | mIoU | mAP |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| CelebA-HQ | standard | 751 | 0.500 | 0.940 | 0.000 | 0.000 | 0.000 | 0.000 | 0.125 |
+| CelebA-HQ | exchanged | 751 | 0.880 | 0.990 | 1.000 | 0.760 | 0.864 | 0.557 | 0.816 |
+| CityScapes | standard | 2,023 | 0.500 | 0.425 | 0.000 | 0.000 | 0.000 | 0.000 | 0.225 |
+| CityScapes | exchanged | 2,023 | 0.500 | 0.517 | 1.000 | 0.001 | 0.002 | 0.034 | 0.480 |
+| OpenImages | standard | 1,059 | 0.506 | 0.955 | 1.000 | 0.012 | 0.024 | 0.000 | 0.241 |
+| OpenImages | exchanged | 1,059 | 0.552 | 0.761 | 1.000 | 0.104 | 0.188 | 0.007 | 0.304 |
+| SUN-RGBD | standard | 2,990 | 0.500 | 0.961 | 0.000 | 0.000 | 0.000 | 0.000 | 0.114 |
+| SUN-RGBD | exchanged | 2,990 | 0.556 | 0.883 | 1.000 | 0.111 | 0.200 | 0.239 | 0.523 |
+
+The strongest fine-tuned classification ranking appears on CelebA-HQ and SUN-RGBD, with AUCs above 0.88 for both variants. CityScapes is effectively at chance for exchanged classification and OpenImages retains ranking signal but weak thresholded recall. Across every dataset, standard full mIoU is approximately zero at the default threshold; exchanged localization is strongest on CelebA-HQ and SUN-RGBD.
+
 ### Current conclusion
 
-On this subset, pretrained PSCC-Net does not reproduce the paper's expected standard-to-INP-X collapse. It performs poorly on standard inpainting and somewhat better on exchanged images, while still missing most exchanged positives at the default threshold. A validation-selected low classification threshold substantially improves exchanged-image F1, while a lower mask threshold modestly improves full-image localization and strongly improves within-mask localization. The 256 Ã— 256 control does not change that conclusion: it slightly improves standard-image AUC but reduces the much more useful exchanged-image classification and localization ranking signal. Native-resolution inference therefore remains the main evaluation setting. The remaining limitation is best explained by the traditional-manipulation/RFR-Net versus diffusion-inpainting domain mismatch rather than input resolution alone. The next steps are per-dataset metrics, independent threshold calibration, and fine-tuning.
+On this subset, fine-tuning improves classification ranking and validation-calibrated classification substantially, especially for standard images where AUC rises from 0.340 to 0.798. It does not improve fixed-threshold localization: standard mIoU remains approximately zero and exchanged mIoU falls from 0.328 to 0.177. The fine-tuned model learns useful image-level ordering but has not yet learned reliable pixel-level localization at the evaluated operating thresholds. The remaining gap between RFR-style manipulation training and diffusion inpainting remains the leading explanation.
 
 - **Threshold.** The fixed 0.5 mask threshold matches INP-X's Appendix A.2 convention and should remain the primary directly comparable result. The sensitivity analysis finds 0.3 to be better among the tested thresholds, so we could extend the sweep below 0.3 before treating it as optimal.
 - **Resolution mismatch.** PSCC-Net was trained on 256×256 crops (per their `crop_size` config) but runs fully-convolutionally at any size at inference. Our INP-X images are on a different native resolution, 512 × 512 pixels. However, the original images are mixed:

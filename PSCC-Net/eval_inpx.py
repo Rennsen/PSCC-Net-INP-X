@@ -54,7 +54,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # --------------------------------------------------------------------------
 # model loading
 # --------------------------------------------------------------------------
-def build_model(device, input_size=None):
+def build_model(device, input_size=None, checkpoint_path=None):
     args = get_pscc_args()
     if input_size is not None:
         args.crop_size = [input_size, input_size]
@@ -67,9 +67,18 @@ def build_model(device, input_size=None):
     ClsNet = nn.DataParallel(ClsNet).to(device)
 
     map_loc = device
-    FENet.load_state_dict(torch.load(os.path.join(SCRIPT_DIR, 'checkpoint', 'HRNet_checkpoint', 'HRNet.pth'), map_location=map_loc))
-    SegNet.load_state_dict(torch.load(os.path.join(SCRIPT_DIR, 'checkpoint', 'NLCDetection_checkpoint', 'NLCDetection.pth'), map_location=map_loc))
-    ClsNet.load_state_dict(torch.load(os.path.join(SCRIPT_DIR, 'checkpoint', 'DetectionHead_checkpoint', 'DetectionHead.pth'), map_location=map_loc))
+    if checkpoint_path:
+        checkpoint = torch.load(checkpoint_path, map_location=map_loc)
+        if not all(name in checkpoint for name in ('FENet', 'SegNet', 'ClsNet')):
+            raise RuntimeError(
+                f'Fine-tuned checkpoint must contain FENet, SegNet, and ClsNet state dictionaries: {checkpoint_path}')
+        FENet.load_state_dict(checkpoint['FENet'])
+        SegNet.load_state_dict(checkpoint['SegNet'])
+        ClsNet.load_state_dict(checkpoint['ClsNet'])
+    else:
+        FENet.load_state_dict(torch.load(os.path.join(SCRIPT_DIR, 'checkpoint', 'HRNet_checkpoint', 'HRNet.pth'), map_location=map_loc))
+        SegNet.load_state_dict(torch.load(os.path.join(SCRIPT_DIR, 'checkpoint', 'NLCDetection_checkpoint', 'NLCDetection.pth'), map_location=map_loc))
+        ClsNet.load_state_dict(torch.load(os.path.join(SCRIPT_DIR, 'checkpoint', 'DetectionHead_checkpoint', 'DetectionHead.pth'), map_location=map_loc))
 
     FENet.eval(); SegNet.eval(); ClsNet.eval()
     return FENet, SegNet, ClsNet
@@ -169,6 +178,8 @@ def main(defaults=None):
                     help='fraction used only to select thresholds')
     ap.add_argument('--sensitivity-out', default=defaults.get('sensitivity_out'),
                     help='optional CSV for validation-selected threshold results')
+    ap.add_argument('--finetuned-checkpoint', default=defaults.get('finetuned_checkpoint'),
+                    help='full fine-tuning checkpoint containing FENet, SegNet, and ClsNet')
     ap.add_argument('--check-only', action='store_true',
                     help='validate image/mask/source pairing without loading the model')
     args = ap.parse_args()
@@ -196,7 +207,9 @@ def main(defaults=None):
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     print(f"Using device: {device}")
 
-    FENet, SegNet, ClsNet = build_model(device)
+    FENet, SegNet, ClsNet = build_model(
+        device, input_size=args.inference_size,
+        checkpoint_path=args.finetuned_checkpoint)
 
     rows = []
     sensitivity_rows = []

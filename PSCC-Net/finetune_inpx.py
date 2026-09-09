@@ -70,8 +70,8 @@ def parse_args():
                         help='edited variants used for training and reporting')
     parser.add_argument('--train-size', type=int, default=256,
                         help='square input size during fine-tuning')
-    parser.add_argument('--epochs', type=int, default=15)
-    parser.add_argument('--warmup-epochs', type=int, default=1,
+    parser.add_argument('--epochs', type=int, default=25)
+    parser.add_argument('--warmup-epochs', type=int, default=3,
                         help='epochs with the HRNet backbone frozen')
     parser.add_argument('--batch-size', type=int, default=4)
     parser.add_argument('--workers', type=int, default=4)
@@ -80,9 +80,9 @@ def parse_args():
     parser.add_argument('--head-lr', type=float, default=1e-4)
     parser.add_argument('--backbone-lr-scale', type=float, default=0.1)
     parser.add_argument('--weight-decay', type=float, default=1e-4)
-    parser.add_argument('--segmentation-weight', type=float, default=1.0)
-    parser.add_argument('--dice-weight', type=float, default=0.5)
-    parser.add_argument('--patience', type=int, default=5,
+    parser.add_argument('--segmentation-weight', type=float, default=3.0)
+    parser.add_argument('--dice-weight', type=float, default=1.0)
+    parser.add_argument('--patience', type=int, default=7,
                         help='early-stopping patience, measured in epochs')
     parser.add_argument('--seed', type=int, default=20260826)
     parser.add_argument('--validation-fraction', type=float, default=0.15)
@@ -689,7 +689,7 @@ def main():
                            SegNet, ClsNet)
             print(f'  New best validation score: {best_score:.4f}')
         else:
-            no_improvement += 1
+            no_improvement += 1 
             print(f'  No validation improvement ({no_improvement}/{args.patience}).')
             if no_improvement >= args.patience:
                 print('Early stopping.')
