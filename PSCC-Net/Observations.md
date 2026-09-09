@@ -271,3 +271,37 @@ On this subset, fine-tuning improves classification ranking and validation-calib
   **Decision:** retain the original/native-resolution evaluator for reported results and as the baseline for fine-tuning. I'm keeping `eval_inpx_256.py` and its CSVs as the documented resolution ablation, not as the chosen operating configuration. This makes the RFR-Net-trained manipulation-detector versus diffusion-inpainting domain mismatch the more plausible primary explanation; resizing alone cannot resolve it.
 
 - **`removal` training class was RFR-Net, not diffusion.** I already flagged this in the comparative table, but it is worth repeating because it is the strongest reason to expect PSCC-Net to perform poorly on both `standard` and `exchanged`, independently of the INP-X effect. If both numbers are low and roughly equal, I would frame that as "PSCC-Net does not generalize to diffusion inpainting," rather than as evidence of shortcut learning. This distinction matters when I present the results.
+
+## Final Fine-Tuning Analysis
+
+The final run in `runs/inpx_finetune_final` used a source-disjoint split, with 4,735 training records, 1,024 validation records, and 1,064 held-out test records. The best checkpoint was selected at epoch 11 using the validation macro mean of classification AUC and mask AP. Thresholds were selected on validation data and frozen before evaluating the test split.
+
+### Held-out comparison
+
+Fine-tuning substantially improved image-level ranking for both variants:
+
+| Variant | Pretrained AUC | Fine-tuned AUC | Pretrained mask mAP | Fine-tuned mask mAP |
+| --- | ---: | ---: | ---: | ---: |
+| Standard | 0.368 | 0.893 | 0.160 | 0.247 |
+| Exchanged | 0.770 | 0.855 | 0.588 | 0.639 |
+
+The standard-inpainting AUC increase of 0.525 is the clearest result: the fine-tuned model learns a strong ordering between authentic and standard-inpainted images that the bundled model largely lacks. Exchanged-image AUC also improves by 0.085, indicating that fine-tuning preserves and strengthens the existing exchanged-image signal rather than overfitting only to standard inpainting.
+
+At the validation-selected operating thresholds, the fine-tuned model also improves classification metrics:
+
+| Variant | Classification threshold | Accuracy | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Standard | 0.01 | 0.788 | 0.735 | 0.900 | 0.809 |
+| Exchanged | 0.01 | 0.738 | 0.712 | 0.801 | 0.754 |
+
+The threshold of 0.01 shows that the model's scores are not calibrated around the conventional 0.5 decision boundary. It should be treated as a validation-selected operating point for this run, not as a universal threshold. The high standard recall and strong F1 are meaningful on this held-out split, but the very low threshold should be retained whenever these metrics are reproduced.
+
+Localization also improves after fine-tuning. Standard full-image mIoU increases from 0.086 to 0.116 and mask mAP from 0.160 to 0.247. Exchanged full-image mIoU increases from 0.348 to 0.389 and mask mAP from 0.588 to 0.639. The selected mask thresholds differ by variant: 0.05 for standard and 0.25 for exchanged. This difference again indicates that the output scores require calibration rather than a single default threshold.
+
+The interior and near-edge localization scores remain similar: fine-tuned standard mIoU is 0.221 in the interior and 0.195 in the ring, while exchanged mIoU is 0.560 and 0.543. The small ring/interior differences do not support a boundary-only explanation for the localization signal in this evaluation.
+
+### Conclusion
+
+Fine-tuning on the INP-X standard and exchanged variants materially improves PSCC-Net. On the held-out test split it produces strong classification ranking for both variants, especially standard inpainting, and improves mask ranking and thresholded localization. This is a genuine improvement over the bundled pretrained checkpoint under the source-disjoint protocol.
+
+The result should be described as improved adaptation to INP-X, not as evidence that PSCC-Net is fully solved for diffusion-inpainting detection. Performance depends on the dataset and on validation calibration, and the selected classification threshold is unusually low. The remaining domain gap is still relevant because the original model was trained for traditional manipulation and RFR-style removal rather than diffusion inpainting. Future comparisons should use the same split, checkpoint, native-resolution evaluator, and validation-selected thresholds.
