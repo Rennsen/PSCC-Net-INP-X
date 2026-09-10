@@ -305,3 +305,40 @@ The interior and near-edge localization scores remain similar: fine-tuned standa
 Fine-tuning on the INP-X standard and exchanged variants materially improves PSCC-Net. On the held-out test split it produces strong classification ranking for both variants, especially standard inpainting, and improves mask ranking and thresholded localization. This is a genuine improvement over the bundled pretrained checkpoint under the source-disjoint protocol.
 
 The result should be described as improved adaptation to INP-X, not as evidence that PSCC-Net is fully solved for diffusion-inpainting detection. Performance depends on the dataset and on validation calibration, and the selected classification threshold is unusually low. The remaining domain gap is still relevant because the original model was trained for traditional manipulation and RFR-style removal rather than diffusion inpainting. Future comparisons should use the same split, checkpoint, native-resolution evaluator, and validation-selected thresholds.
+
+## Completed Final Evaluation
+
+The final native-resolution evaluation was completed with `runs/inpx_finetune_final/best.pt` and produced 13,646 rows in `results/finetuned_final.csv`: 6,823 standard-inpainting records and 6,823 exchanged-inpainting records. The CSV uses the default operating thresholds of 0.5 for both classification and mask output. Its per-image localization aggregates are:
+
+| Variant | Records | Mean full mIoU | Mean mask AP |
+| --- | ---: | ---: | ---: |
+| Standard | 6,823 | 0.063 | 0.249 |
+| Exchanged | 6,823 | 0.362 | 0.616 |
+
+The exchanged images therefore produce substantially stronger pixel-level predictions than standard images in the complete evaluation. The exchanged full mIoU is about 5.7 times the standard value, and mask AP is about 2.5 times higher. The per-image CSV contains edited-image predictions; classification metrics should therefore be taken from the paired real-versus-edited results in `finetuned_final_threshold_sensitivity.csv`, rather than inferred from the CSV rows alone.
+
+### Calibrated held-out operating results
+
+The sensitivity evaluation selected a classification threshold of 0.05 for both variants and a mask threshold of 0.3 for both variants. On the held-out test split, the results were:
+
+| Variant | Accuracy | Precision | Recall | F1 | Full mIoU | Interior mIoU | Ring mIoU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Standard | 0.725 | 0.903 | 0.505 | 0.648 | 0.075 | 0.114 | 0.086 |
+| Exchanged | 0.765 | 0.915 | 0.584 | 0.713 | 0.373 | 0.518 | 0.505 |
+
+The calibrated threshold materially outperforms the default 0.5 classification threshold. At 0.5, held-out F1 falls to 0.329 for standard images and 0.445 for exchanged images. This confirms that the model's raw classification scores are conservative and require validation-based calibration for useful deployment. The mask threshold also matters: lowering it from 0.5 to 0.3 raises held-out full mIoU from 0.063 to 0.075 for standard images and from 0.362 to 0.373 for exchanged images. Raising it to 0.7 reduces full mIoU to 0.050 and 0.328.
+
+### Dataset-level localization
+
+| Dataset | Standard full mIoU | Standard mask AP | Exchanged full mIoU | Exchanged mask AP |
+| --- | ---: | ---: | ---: | ---: |
+| CelebA-HQ | 0.013 | 0.176 | 0.543 | 0.782 |
+| CityScapes | 0.171 | 0.434 | 0.457 | 0.751 |
+| OpenImages | 0.010 | 0.282 | 0.058 | 0.343 |
+| SUN-RGBD | 0.022 | 0.130 | 0.359 | 0.578 |
+
+CelebA-HQ and CityScapes are the strongest exchanged-image localization domains. OpenImages is the weakest for exchanged localization, with full mIoU only 0.058, while standard localization is weak across all datasets except for a moderate CityScapes result. Interior and ring scores remain broadly similar, so these results do not indicate that the model is relying only on mask-edge artifacts.
+
+### Final product assessment
+
+The final product is a useful calibrated INP-X detector and localizer, with reliable ranking and practical held-out classification performance, especially for exchanged images and for standard-image detection after fine-tuning. It is not a single-threshold, dataset-invariant solution: the 0.05 classification threshold and 0.3 mask threshold were selected from validation data and should accompany reported metrics. The strongest remaining limitation is dataset variation, particularly weak OpenImages localization and the lower standard-inpainting overlap. The recommended release configuration is the native-resolution evaluator with `best.pt`, validation-selected thresholds, and the sensitivity CSV retained as the calibration record.
