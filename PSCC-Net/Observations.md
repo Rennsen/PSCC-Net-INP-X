@@ -216,25 +216,25 @@ Fine-tuning substantially improved threshold-independent classification ranking 
 
 The validation-selected classification threshold remained 0.05 for both variants. On the held-out test split it produced:
 
-| Variant | Threshold | Accuracy | Precision | Recall | F1 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Standard | 0.05 | 0.600 | 0.708 | 0.339 | 0.459 |
-| Exchanged | 0.05 | 0.687 | 0.786 | 0.515 | 0.622 |
+| Variant   | Threshold | Accuracy | Precision | Recall |    F1 |
+| --------- | --------: | -------: | --------: | -----: | ----: |
+| Standard  |      0.05 |    0.600 |     0.708 |  0.339 | 0.459 |
+| Exchanged |      0.05 |    0.687 |     0.786 |  0.515 | 0.622 |
 
 Validation full mIoU selected mask threshold 0.3 for both variants. Held-out full mIoU at that threshold was 0.001 for standard and 0.198 for exchanged; interior/ring mIoU was 0.001/0.001 for standard and 0.265/0.273 for exchanged. The near-equal exchanged ring and interior scores do not suggest a boundary-only localization shortcut.
 
 ### Fine-tuned per-dataset results
 
-| Dataset | Variant | N | Accuracy | AUC | Precision | Recall | F1 | mIoU | mAP |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| CelebA-HQ | standard | 751 | 0.500 | 0.940 | 0.000 | 0.000 | 0.000 | 0.000 | 0.125 |
-| CelebA-HQ | exchanged | 751 | 0.880 | 0.990 | 1.000 | 0.760 | 0.864 | 0.557 | 0.816 |
-| CityScapes | standard | 2,023 | 0.500 | 0.425 | 0.000 | 0.000 | 0.000 | 0.000 | 0.225 |
-| CityScapes | exchanged | 2,023 | 0.500 | 0.517 | 1.000 | 0.001 | 0.002 | 0.034 | 0.480 |
-| OpenImages | standard | 1,059 | 0.506 | 0.955 | 1.000 | 0.012 | 0.024 | 0.000 | 0.241 |
-| OpenImages | exchanged | 1,059 | 0.552 | 0.761 | 1.000 | 0.104 | 0.188 | 0.007 | 0.304 |
-| SUN-RGBD | standard | 2,990 | 0.500 | 0.961 | 0.000 | 0.000 | 0.000 | 0.000 | 0.114 |
-| SUN-RGBD | exchanged | 2,990 | 0.556 | 0.883 | 1.000 | 0.111 | 0.200 | 0.239 | 0.523 |
+| Dataset    | Variant   |     N | Accuracy |   AUC | Precision | Recall |    F1 |  mIoU |   mAP |
+| ---------- | --------- | ----: | -------: | ----: | --------: | -----: | ----: | ----: | ----: |
+| CelebA-HQ  | standard  |   751 |    0.500 | 0.940 |     0.000 |  0.000 | 0.000 | 0.000 | 0.125 |
+| CelebA-HQ  | exchanged |   751 |    0.880 | 0.990 |     1.000 |  0.760 | 0.864 | 0.557 | 0.816 |
+| CityScapes | standard  | 2,023 |    0.500 | 0.425 |     0.000 |  0.000 | 0.000 | 0.000 | 0.225 |
+| CityScapes | exchanged | 2,023 |    0.500 | 0.517 |     1.000 |  0.001 | 0.002 | 0.034 | 0.480 |
+| OpenImages | standard  | 1,059 |    0.506 | 0.955 |     1.000 |  0.012 | 0.024 | 0.000 | 0.241 |
+| OpenImages | exchanged | 1,059 |    0.552 | 0.761 |     1.000 |  0.104 | 0.188 | 0.007 | 0.304 |
+| SUN-RGBD   | standard  | 2,990 |    0.500 | 0.961 |     0.000 |  0.000 | 0.000 | 0.000 | 0.114 |
+| SUN-RGBD   | exchanged | 2,990 |    0.556 | 0.883 |     1.000 |  0.111 | 0.200 | 0.239 | 0.523 |
 
 The strongest fine-tuned classification ranking appears on CelebA-HQ and SUN-RGBD, with AUCs above 0.88 for both variants. CityScapes is effectively at chance for exchanged classification and OpenImages retains ranking signal but weak thresholded recall. Across every dataset, standard full mIoU is approximately zero at the default threshold; exchanged localization is strongest on CelebA-HQ and SUN-RGBD.
 
@@ -280,19 +280,19 @@ The final run in `runs/inpx_finetune_final` used a source-disjoint split, with 4
 
 Fine-tuning substantially improved image-level ranking for both variants:
 
-| Variant | Pretrained AUC | Fine-tuned AUC | Pretrained mask mAP | Fine-tuned mask mAP |
-| --- | ---: | ---: | ---: | ---: |
-| Standard | 0.368 | 0.893 | 0.160 | 0.247 |
-| Exchanged | 0.770 | 0.855 | 0.588 | 0.639 |
+| Variant   | Pretrained AUC | Fine-tuned AUC | Pretrained mask mAP | Fine-tuned mask mAP |
+| --------- | -------------: | -------------: | ------------------: | ------------------: |
+| Standard  |          0.368 |          0.893 |               0.160 |               0.247 |
+| Exchanged |          0.770 |          0.855 |               0.588 |               0.639 |
 
 The standard-inpainting AUC increase of 0.525 is the clearest result: the fine-tuned model learns a strong ordering between authentic and standard-inpainted images that the bundled model largely lacks. Exchanged-image AUC also improves by 0.085, indicating that fine-tuning preserves and strengthens the existing exchanged-image signal rather than overfitting only to standard inpainting.
 
 At the validation-selected operating thresholds, the fine-tuned model also improves classification metrics:
 
-| Variant | Classification threshold | Accuracy | Precision | Recall | F1 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Standard | 0.01 | 0.788 | 0.735 | 0.900 | 0.809 |
-| Exchanged | 0.01 | 0.738 | 0.712 | 0.801 | 0.754 |
+| Variant   | Classification threshold | Accuracy | Precision | Recall |    F1 |
+| --------- | -----------------------: | -------: | --------: | -----: | ----: |
+| Standard  |                     0.01 |    0.788 |     0.735 |  0.900 | 0.809 |
+| Exchanged |                     0.01 |    0.738 |     0.712 |  0.801 | 0.754 |
 
 The threshold of 0.01 shows that the model's scores are not calibrated around the conventional 0.5 decision boundary. It should be treated as a validation-selected operating point for this run, not as a universal threshold. The high standard recall and strong F1 are meaningful on this held-out split, but the very low threshold should be retained whenever these metrics are reproduced.
 
@@ -310,10 +310,10 @@ The result should be described as improved adaptation to INP-X, not as evidence 
 
 The final native-resolution evaluation was completed with `runs/inpx_finetune_final/best.pt` and produced 13,646 rows in `results/finetuned_final.csv`: 6,823 standard-inpainting records and 6,823 exchanged-inpainting records. The CSV uses the default operating thresholds of 0.5 for both classification and mask output. Its per-image localization aggregates are:
 
-| Variant | Records | Mean full mIoU | Mean mask AP |
-| --- | ---: | ---: | ---: |
-| Standard | 6,823 | 0.063 | 0.249 |
-| Exchanged | 6,823 | 0.362 | 0.616 |
+| Variant   | Records | Mean full mIoU | Mean mask AP |
+| --------- | ------: | -------------: | -----------: |
+| Standard  |   6,823 |          0.063 |        0.249 |
+| Exchanged |   6,823 |          0.362 |        0.616 |
 
 The exchanged images therefore produce substantially stronger pixel-level predictions than standard images in the complete evaluation. The exchanged full mIoU is about 5.7 times the standard value, and mask AP is about 2.5 times higher. The per-image CSV contains edited-image predictions; classification metrics should therefore be taken from the paired real-versus-edited results in `finetuned_final_threshold_sensitivity.csv`, rather than inferred from the CSV rows alone.
 
@@ -321,21 +321,21 @@ The exchanged images therefore produce substantially stronger pixel-level predic
 
 The sensitivity evaluation selected a classification threshold of 0.05 for both variants and a mask threshold of 0.3 for both variants. On the held-out test split, the results were:
 
-| Variant | Accuracy | Precision | Recall | F1 | Full mIoU | Interior mIoU | Ring mIoU |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Standard | 0.725 | 0.903 | 0.505 | 0.648 | 0.075 | 0.114 | 0.086 |
-| Exchanged | 0.765 | 0.915 | 0.584 | 0.713 | 0.373 | 0.518 | 0.505 |
+| Variant   | Accuracy | Precision | Recall |    F1 | Full mIoU | Interior mIoU | Ring mIoU |
+| --------- | -------: | --------: | -----: | ----: | --------: | ------------: | --------: |
+| Standard  |    0.725 |     0.903 |  0.505 | 0.648 |     0.075 |         0.114 |     0.086 |
+| Exchanged |    0.765 |     0.915 |  0.584 | 0.713 |     0.373 |         0.518 |     0.505 |
 
 The calibrated threshold materially outperforms the default 0.5 classification threshold. At 0.5, held-out F1 falls to 0.329 for standard images and 0.445 for exchanged images. This confirms that the model's raw classification scores are conservative and require validation-based calibration for useful deployment. The mask threshold also matters: lowering it from 0.5 to 0.3 raises held-out full mIoU from 0.063 to 0.075 for standard images and from 0.362 to 0.373 for exchanged images. Raising it to 0.7 reduces full mIoU to 0.050 and 0.328.
 
 ### Dataset-level localization
 
-| Dataset | Standard full mIoU | Standard mask AP | Exchanged full mIoU | Exchanged mask AP |
-| --- | ---: | ---: | ---: | ---: |
-| CelebA-HQ | 0.013 | 0.176 | 0.543 | 0.782 |
-| CityScapes | 0.171 | 0.434 | 0.457 | 0.751 |
-| OpenImages | 0.010 | 0.282 | 0.058 | 0.343 |
-| SUN-RGBD | 0.022 | 0.130 | 0.359 | 0.578 |
+| Dataset    | Standard full mIoU | Standard mask AP | Exchanged full mIoU | Exchanged mask AP |
+| ---------- | -----------------: | ---------------: | ------------------: | ----------------: |
+| CelebA-HQ  |              0.013 |            0.176 |               0.543 |             0.782 |
+| CityScapes |              0.171 |            0.434 |               0.457 |             0.751 |
+| OpenImages |              0.010 |            0.282 |               0.058 |             0.343 |
+| SUN-RGBD   |              0.022 |            0.130 |               0.359 |             0.578 |
 
 CelebA-HQ and CityScapes are the strongest exchanged-image localization domains. OpenImages is the weakest for exchanged localization, with full mIoU only 0.058, while standard localization is weak across all datasets except for a moderate CityScapes result. Interior and ring scores remain broadly similar, so these results do not indicate that the model is relying only on mask-edge artifacts.
 
