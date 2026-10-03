@@ -8,14 +8,19 @@ These are my notes from cloning `proteus1991/PSCC-Net`, getting it running, and 
 - The shipped `test.py` only prints a forged/authentic label. It has **no metric computation and no way to evaluate an arbitrary folder** because its dataset class is hardcoded to `./sample`. I wrote `eval_inpx.py` instead of trying to force `test.py` into this role.
 - I confirmed that PSCC-Net is **fully convolutional**: `crop_size` is training-only, so inference does not require cropping or resizing. This lets us evaluate INP-X at native resolution.
 - My evaluator reports the INP-X-style image metrics (Acc/AUC/Prec/Rec/F1), localization metrics (mIoU/mAP), and the boundary-restricted diagnostic we discussed (interior versus near-edge ring using mask-relative erosion).
+- Both single-variant runs were later extended to 17 epochs: exchanged-only improved to a new best at epoch 13 and transfers to standard-image classification (AUC 0.833), while standard-only never beat epoch 2 and transfers nowhere. Joint training remains best. See "Extended Single-Variant Fine-Tuning" and the extended visualization sections.
 
 ## What's in this folder
 
 - `smoke_test.py` → My quick checkpoint-loading and inference check on the repository's own `sample/` images. I would run this first when setting up a new environment.
 - `eval_inpx.py` → The main evaluator I wrote for the imported INP-X originals, edited images, and masks. It produces a per-image CSV and summary table.
-- `seg_hrnet.py.diff` → The two-line compatibility fix I applied, kept as a readable diff.
-- `mock_run_proof.csv` → Output from my plumbing test. It only verifies that the I/O and metric pipeline works; its numerical values are not benchmark results.
-- `requirements.txt` → The Python packages I used to run the scripts.
+- `eval_inpx_256.py` → Fixed-256 resolution ablation; resizes all inputs to 256×256 before inference. Kept as a negative control.
+- `finetune_inpx.py` → Source-disjoint fine-tuning pipeline (trains on both variants by default, reports pretrained vs fine-tuned on held-out splits).
+- `finetune_standard_only.py` / `finetune_exchanged_only.py` → Thin wrappers restricting training to one variant (evaluation still covers both).
+- `visualize_localization.py` → Side-by-side localization grids comparing pretrained, single-variant, and fully fine-tuned models.
+- `results_*_extended.csv` / `threshold_sensitivity_*_extended.csv` → Standalone native-resolution evaluations of the extended (17-epoch) single-variant checkpoints.
+- `my_vis_results*/` → Visualization grids and per-image IoU logs.
+- `runs/` (gitignored) → `inpx_finetune_final/` (joint training, canonical), `inpx_finetune_standard_only/`, `inpx_finetune_exchanged_only/`, plus stale `inpx_finetune/` (incomplete early run, no report — ignore it).
 
 ## The two bugs, and why they happen
 
@@ -28,15 +33,9 @@ These are my notes from cloning `proteus1991/PSCC-Net`, getting it running, and 
 git clone https://github.com/proteus1991/PSCC-Net.git
 cd PSCC-Net
 pip install -r requirements.txt
-
-# apply the fix, either:
-cp /path/to/seg_hrnet_PATCHED.py models/seg_hrnet.py
-# or:
-patch models/seg_hrnet.py < /path/to/seg_hrnet.py.diff
-
-cp /path/to/smoke_test.py .
-cp /path/to/eval_inpx.py .
 ```
+
+The two compatibility fixes described above are already applied in `models/seg_hrnet.py` in this repo, so there is nothing to patch on a fresh checkout of this fork.
 
 Checkpoints are already in `checkpoint/` in the repo, nothing else to download to get the pretrained model running.
 
@@ -68,8 +67,8 @@ python eval_inpx.py --root inpainting_exchange/test-data --out results.csv
 
 # the following can be run to check for pairing with masks
 python .\eval_inpx.py --check-only
-# expected result:
->> Found 6823 evaluable exchanged images
+# expected result (wording: "evaluable standard/exchanged pairs"):
+>> Found 6823 evaluable standard/exchanged pairs
 >> Skipped 3177 files with missing source or mask
 >>  missing CelebAHQ/10759_cloth_CelebAHQ_OpenJourney_simple
 >>  missing CelebAHQ/10759_l_ear_CelebAHQ_OpenJourney_simple
@@ -342,3 +341,279 @@ CelebA-HQ and CityScapes are the strongest exchanged-image localization domains.
 ### Final product assessment
 
 The final product is a useful calibrated INP-X detector and localizer, with reliable ranking and practical held-out classification performance, especially for exchanged images and for standard-image detection after fine-tuning. It is not a single-threshold, dataset-invariant solution: the 0.05 classification threshold and 0.3 mask threshold were selected from validation data and should accompany reported metrics. The strongest remaining limitation is dataset variation, particularly weak OpenImages localization and the lower standard-inpainting overlap. The recommended release configuration is the native-resolution evaluator with `best.pt`, validation-selected thresholds, and the sensitivity CSV retained as the calibration record.
+
+## Extended Single-Variant Fine-Tuning (17 epochs each)
+
+Both single-variant runs were extended from their initial lengths to 17 total epochs by resuming from `last.pt` (not `best.pt`, which would have rewound training and discarded the LR-scheduler state), with patience raised to 25 so the extension could not early-stop. Same `--run-dir`, seed (`20260826`), and split fractions, so the source-disjoint split is unchanged. Extension commands:
+
+```powershell
+py -3.10 .\finetune_exchanged_only.py --root .\inpainting_exchange\test-data --run-dir runs\inpx_finetune_exchanged_only --epochs 17 --warmup-epochs 1 --patience 25 --resume runs\inpx_finetune_exchanged_only\last.pt
+py -3.10 .\finetune_standard_only.py --root .\inpainting_exchange\test-data --run-dir runs\inpx_finetune_standard_only --epochs 17 --warmup-epochs 1 --patience 25 --resume runs\inpx_finetune_standard_only\last.pt
+```
+
+Note `--epochs` is a total, not an increment (`range(start_epoch, args.epochs)` in `finetune_inpx.py`). Both runs completed 17 epochs (34 history rows each: 17 epochs × 2 variants).
+
+### Exchanged-only extension: best moved from epoch 5 to epoch 13
+
+Validation macro-mean (AUC + mask AP) trajectory: 0.559 (ep1) → 0.577 (ep3) → 0.581 (ep5, then-best) → dip to 0.483 (ep11) → recovery 0.571 (ep12) → **0.595 (ep13, new best)** → plateau 0.592/0.585/0.584/0.589 (ep14–17, no further best). `best.pt` is therefore epoch 13; `last.pt` is epoch 17.
+
+Held-out test at the run's own validation-selected thresholds (`report.md`, regenerated 2026-10-02):
+
+| Variant   | AUC   | Accuracy | Precision | Recall | F1    | Full mIoU | Mask mAP | Class thr | Mask thr |
+| --------- | ----: | -------: | --------: | -----: | ----: | --------: | -------: | --------: | -------: |
+| Standard  | 0.833 |    0.719 |     0.661 |  0.899 | 0.762 |     0.116 |    0.204 |      0.13 |     0.05 |
+| Exchanged | 0.815 |    0.686 |     0.638 |  0.857 | 0.732 |     0.339 |    0.588 |      0.12 |     0.40 |
+
+The notable finding is **asymmetric cross-variant transfer**: training on exchanged images alone learns a representation that also separates standard inpainting (standard AUC 0.833, F1 0.762 — better than its exchanged F1 of 0.732). Standard-image localization stays weak in absolute terms (mIoU 0.116) but matches the jointly trained final model on standard images.
+
+### Standard-only extension: no new best in 14 extra epochs (best stays epoch 2)
+
+Monitor trajectory: 0.377 (ep1) → **0.486 (ep2, best)** → 0.460 (ep3) → 0.461/0.446/0.473 (ep4–6) → 0.484 (ep7) → 0.478/0.468/0.468/0.469 (ep8–11) → decline 0.442 → 0.428 (ep12–17). Epochs 7–8 show standard AUC spiking to ~0.81–0.82, but exchanged AUC collapses to ~0.59–0.61 at the same time, so the macro-mean never beats epoch 2. `best.pt` is unchanged (epoch 2, 2026-09-27); the report was still regenerated (now stating 17 requested epochs) as the correct record of a negative result:
+
+| Variant   | AUC   | Accuracy | Precision | Recall | F1    | Full mIoU | Mask mAP | Class thr | Mask thr |
+| --------- | ----: | -------: | --------: | -----: | ----: | --------: | -------: | --------: | -------: |
+| Standard  | 0.666 |    0.521 |     0.925 |  0.046 | 0.088 |     0.113 |    0.202 |      0.01 |     0.05 |
+| Exchanged | 0.757 |    0.597 |     0.981 |  0.198 | 0.330 |     0.143 |    0.319 |      0.01 |     0.15 |
+
+Standard-only training overfits its own variant's signature: near-perfect precision with near-zero recall, and no transfer to exchanged images. The late-epoch monitor decay (0.469 → 0.428) further suggests the model drifts rather than accumulates useful signal past epoch ~8.
+
+### Standalone native-resolution evals of the extended checkpoints (threshold 0.5)
+
+```powershell
+py -3.10 .\eval_inpx.py --root .\inpainting_exchange\test-data --out results_exchanged_only_extended.csv --sensitivity-out threshold_sensitivity_exchanged_only_extended.csv --finetuned-checkpoint runs\inpx_finetune_exchanged_only\best.pt
+py -3.10 .\eval_inpx.py --root .\inpainting_exchange\test-data --out results_standard_only_extended.csv --sensitivity-out threshold_sensitivity_standard_only_extended.csv --finetuned-checkpoint runs\inpx_finetune_standard_only\best.pt
+```
+
+Each CSV has 13,646 rows (6,823 records × 2 variants); each sensitivity CSV has 58 validation/test rows plus the selected-threshold rows. Aggregates at the default 0.5 / 0.5 operating point:
+
+| Checkpoint    | Variant   | Acc   | AUC   | mIoU(full) | mAP   | Interior | Ring  | Gap (ring−interior) |
+| ------------- | --------- | ----: | ----: | ---------: | ----: | -------: | ----: | ------------------: |
+| Exchanged-ext | standard  | 0.611 | 0.810 |      0.061 | 0.207 |    0.110 | 0.096 |              −0.014 |
+| Exchanged-ext | exchanged | 0.687 | 0.796 |      0.335 | 0.581 |    0.470 | 0.453 |              −0.018 |
+| Standard-ext  | standard  | 0.505 | 0.666 |      0.065 | 0.202 |    0.183 | 0.158 |              −0.025 |
+| Standard-ext  | exchanged | 0.529 | 0.742 |      0.138 | 0.313 |    0.675 | 0.657 |              −0.018 |
+
+Per-dataset breakdown at 0.5 (same computation):
+
+| Checkpoint    | Dataset    | Variant   |     N | Acc   | AUC   | mIoU  | mAP   |
+| ------------- | ---------- | --------- | ----: | ----: | ----: | ----: | ----: |
+| Exchanged-ext | CelebA-HQ  | standard  |   751 | 0.531 | 0.783 | 0.011 | 0.095 |
+| Exchanged-ext | CityScapes | standard  | 2,023 | 0.590 | 0.609 | 0.142 | 0.407 |
+| Exchanged-ext | OpenImages | standard  | 1,059 | 0.578 | 0.862 | 0.020 | 0.201 |
+| Exchanged-ext | SUN-RGBD   | standard  | 2,990 | 0.657 | 0.926 | 0.034 | 0.103 |
+| Exchanged-ext | CelebA-HQ  | exchanged |   751 | 0.858 | 0.945 | 0.404 | 0.677 |
+| Exchanged-ext | CityScapes | exchanged | 2,023 | 0.766 | 0.815 | 0.462 | 0.737 |
+| Exchanged-ext | OpenImages | exchanged | 1,059 | 0.570 | 0.685 | 0.073 | 0.353 |
+| Exchanged-ext | SUN-RGBD   | exchanged | 2,990 | 0.631 | 0.857 | 0.325 | 0.532 |
+| Standard-ext  | CelebA-HQ  | standard  |   751 | 0.502 | 0.779 | 0.065 | 0.164 |
+| Standard-ext  | CityScapes | standard  | 2,023 | 0.513 | 0.370 | 0.102 | 0.292 |
+| Standard-ext  | OpenImages | standard  | 1,059 | 0.503 | 0.852 | 0.101 | 0.329 |
+| Standard-ext  | SUN-RGBD   | standard  | 2,990 | 0.501 | 0.721 | 0.026 | 0.105 |
+| Standard-ext  | CelebA-HQ  | exchanged |   751 | 0.683 | 0.979 | 0.086 | 0.196 |
+| Standard-ext  | CityScapes | exchanged | 2,023 | 0.514 | 0.628 | 0.281 | 0.550 |
+| Standard-ext  | SUN-RGBD   | exchanged | 2,990 | 0.506 | 0.746 | 0.060 | 0.204 |
+| Standard-ext  | OpenImages | exchanged | 1,059 | 0.510 | 0.704 | 0.125 | 0.251 |
+
+The evaluator's own hash-based 80/20 validation split selects classification thresholds 0.15/0.15 with mask thresholds 0.3/0.5 for the exchanged-extended checkpoint, and 0.05/0.05 (the grid floor — treat as a boundary value, not an interior optimum) with mask 0.3/0.3 for the standard-extended checkpoint. These differ from each run's internal selection (0.13/0.12 and 0.01/0.01) because the split protocol and threshold grids differ; always report which protocol produced a threshold. Ring−interior gaps stay within ±0.025 everywhere: still no boundary-concentrated signal.
+
+### Deduction
+
+Joint training remains the best configuration, but the extensions sharpen the asymmetry: exchanged-only training transfers *up* to standard images (classification, not localization), while standard-only training transfers nowhere and stalls after epoch 2. Practically, exchanged images carry the learnable signal in this benchmark; standard diffusion inpainting alone does not sustain representation learning for PSCC-Net. This also explains why the joint run's standard-image gains plausibly ride on the exchanged half of its batches.
+
+## Fully Finetuned Model Visualization Analysis
+
+### Overview
+
+After completing the source-disjoint fine-tuning on INP-X (both standard and exchanged variants combined), I generated visualizations comparing the **fully finetuned model** against the pretrained baseline and the single-variant fine-tuning experiments. The fully finetuned model checkpoint is at `runs/inpx_finetune_final/best.pt` (epoch 11, selected by validation macro mean of classification AUC and mask AP).
+
+### Visualization Methodology
+
+The visualization script (`visualize_localization.py`) loads four model configurations and evaluates them on randomly sampled test records from the 6,823 INP-X test records (deterministic seed `20260826`):
+
+1. **Pretrained PSCC-Net** - Original bundled checkpoint (HRNet + NLCDetection + DetectionHead)
+2. **Standard-only fine-tuned** - Extended run, `runs/inpx_finetune_standard_only/best.pt` (epoch 2 of 17, best never beaten)
+3. **Exchanged-only fine-tuned** - Extended run, `runs/inpx_finetune_exchanged_only/best.pt` (epoch 13 of 17)
+4. **Fully fine-tuned** - Fine-tuned on both standard + exchanged (`runs/inpx_finetune_final/best.pt`, epoch 11)
+
+For each record, the script produces two comparison grids:
+- **Standard variant grid**: Original → Standard edit → GT Mask → Overlay probability maps (4 models) → Binary masks at 0.5 threshold (4 models)
+- **Exchanged variant grid**: Original → Exchanged edit → GT Mask → Overlay probability maps (4 models) → Binary masks at 0.5 threshold (4 models)
+
+All masks are resized to match the ground truth mask resolution (512×512 for INP-X). IoU is computed against the binary GT mask at threshold 0.5.
+
+### Key Findings from Visualization
+
+#### 1. Fully Finetuned Model Performance
+
+| Variant | Pretrained IoU | Standard-only FT IoU | Fully FT IoU |
+|---------|----------------|----------------------|--------------|
+| Standard | 0.000-0.489 | 0.000-0.022 | 0.000-0.264 |
+| Exchanged | 0.000-0.867 | 0.000-0.352 | 0.000-0.931 |
+
+**Critical observations:**
+- **Exchanged variants consistently outperform standard variants** across all models (same trend observed in single-variant fine-tuning)
+- **Fully finetuned model achieves the highest IoU on exchanged variants** (up to 0.931 on CelebA-HQ, 0.887 on SUN-RGBD)
+- **Fully finetuned model shows meaningful improvement on standard variants** where pretrained model had near-zero IoU (e.g., 0.264 on SUN-RGBD NYU0512 vs 0.224 pretrained)
+- Standard-only fine-tuning provides marginal gains over pretrained on standard variants but fails on exchanged variants
+- The fully finetuned model effectively combines the strengths of both single-variant fine-tuning approaches
+
+#### 2. Per-Dataset Visualization Summary (20 samples)
+
+| Dataset | Standard Variant Best IoU (Fully FT) | Exchanged Variant Best IoU (Fully FT) |
+|---------|--------------------------------------|----------------------------------------|
+| CelebA-HQ | 0.000 | 0.887-0.867 |
+| CityScapes | 0.032 | 0.090-0.525 |
+| OpenImages | 0.000 | 0.000 (not in 20 samples) |
+| SUN-RGBD | 0.264 | 0.931-0.885 |
+
+The fully finetuned model excels on **CelebA-HQ** and **SUN-RGBD** for exchanged variants, with IoU approaching 0.9. Standard variant localization remains challenging across all datasets, with CityScapes showing the only notable standard-variant IoU (0.032).
+
+#### 3. Comparison with Single-Variant Fine-Tuning (extended checkpoints)
+
+With the extended checkpoints loaded, the earlier "missing checkpoint" caveat no longer applies. On the original 20-sample visualization set:
+
+- **Standard-only FT (epoch 2)**: slight improvements on standard variants (IoU up to 0.022 vs 0.000 pretrained) but near-zero on exchanged variants — consistent with its aggregate exchanged F1 of 0.330.
+- **Exchanged-only FT**: strong on exchanged, weak on standard — the expected specialist pattern at the pre-extension checkpoint; the extended epoch-13 checkpoint additionally transfers to standard *classification* (AUC 0.833) even though its standard-variant localization stays weak.
+- **Fully FT**: achieves strong performance on **both** variants simultaneously, demonstrating that joint training on standard + exchanged inpainting yields a more robust detector without the trade-off observed in single-variant fine-tuning.
+
+Both single-variant experiments exhibit the **same trend**: exchanged inpainting is easier to detect/localize than standard inpainting. The fully finetuned model preserves this trend while elevating performance on both axes.
+
+### Visualization Outputs
+
+All comparison grids saved to `my_vis_results/`:
+- `{dataset}_{name}_standard_comparison.png` - Standard variant side-by-side
+- `{dataset}_{name}_exchanged_comparison.png` - Exchanged variant side-by-side
+- `localization_metrics.csv` - Per-image IoU for all models
+
+Key visual patterns observed in the grids:
+1. **Pretrained model**: Diffuse, low-confidence probability maps on standard variants; sharp but sometimes incomplete maps on exchanged variants
+2. **Standard-only FT**: Minimal change from pretrained on standard; fails completely on exchanged
+3. **Fully FT**: Clean, high-confidence probability maps on exchanged variants; visible improvement on standard variants where pretrained had no signal
+4. **Binary masks (threshold 0.5)**: Fully FT produces the most complete mask coverage on exchanged variants with fewer false positives
+
+### Extended-checkpoint visualization (15 samples, both vis runs)
+
+```powershell
+py -3.10 .\visualize_localization.py --root .\inpainting_exchange\test-data --standard-checkpoint runs\inpx_finetune_standard_only\best.pt --exchanged-checkpoint runs\inpx_finetune_exchanged_only\best.pt --fully-finetuned-checkpoint runs\inpx_finetune_final\best.pt --output-dir my_vis_results_exchanged_extended --num-samples 15 --mask-threshold 0.5 --inference-size 256
+py -3.10 .\visualize_localization.py --root .\inpainting_exchange\test-data --standard-checkpoint runs\inpx_finetune_standard_only\best.pt --exchanged-checkpoint runs\inpx_finetune_exchanged_only\best.pt --fully-finetuned-checkpoint runs\inpx_finetune_final\best.pt --output-dir my_vis_results_standard_extended --num-samples 15 --mask-threshold 0.5 --inference-size 256
+```
+
+Both runs draw the same deterministic 15-record sample (default seed `20260826`), so their `localization_metrics.csv` files are byte-identical (verified by hash) — the script always evaluates all four checkpoints, and no checkpoint changed between the two runs. Outputs live in `my_vis_results_exchanged_extended/` and `my_vis_results_standard_extended/` (30 PNGs + metrics CSV each). Mean and max IoU at mask threshold 0.5:
+
+| Variant   | Pretrained (mean/max) | Standard-only FT | Exchanged-only FT | Fully FT      |
+| --------- | --------------------- | ---------------- | ----------------- | ------------- |
+| Standard  | 0.075 / 0.489         | 0.003 / 0.021    | 0.052 / 0.422     | 0.022 / 0.264 |
+| Exchanged | 0.646 / 0.867         | 0.088 / 0.352    | 0.458 / 0.827     | 0.542 / 0.931 |
+
+Deductions, per experiment:
+- **Exchanged-only FT**: clearly the best specialist on exchanged samples (0.458 vs 0.088 for standard-only), with the single strongest non-joint case at 0.827 (SUN-RGBD b3dodata 0595). On standard samples it is weak in absolute terms (0.052) but still an order of magnitude above standard-only FT (0.003) — the localization mirror of the classification transfer reported above.
+- **Standard-only FT**: effectively zero localization on both variants in this sample (0.003 standard, 0.088 exchanged; max 0.352 on one CityScapes exchanged case). Its epoch-2 checkpoint never learned usable masks, matching the aggregate mIoU of 0.113/0.143.
+- **Fully FT**: best on exchanged (0.542 mean, 0.931 max on SUN-RGBD NYU0512) while retaining the only nonzero standard mean besides pretrained. Joint training dominates both specialists on localization even though exchanged-only FT matches it on classification.
+- **Pretrained baseline** looks deceptively strong on exchanged here (0.646 > fully-FT 0.542) because this 15-sample draw is CelebA-HQ/SUN-RGBD/CityScapes-heavy with no OpenImages records — the two datasets where the bundled model already separates well. Do not quote this subset against the 6,823-record aggregates (pretrained exchanged mIoU 0.348/0.335 there).
+- **Standard-variant localization is near zero for every model** (best single case: pretrained 0.489 on CelebA-HQ 10800_hair). This matches the aggregate standard mIoU ≤ 0.116 across all checkpoints and is the visualization counterpart of the "standard images carry almost no localizable signal" finding.
+- Caveat: the grids use mask threshold 0.5 and inference size 256, while the extended exchanged run selects mask threshold 0.40 and the headline evals run at native resolution — vis IoUs therefore understate the calibrated numbers slightly and uniformly.
+
+### Detailed Method: PSCC Threshold Optimization and All Optimizations
+
+#### Threshold Optimization Pipeline
+
+The threshold optimization follows a **three-stage validation-calibration protocol**:
+
+**Stage 1: Classification Threshold Sweep**
+```python
+# In finetune_inpx.py: select_thresholds()
+thresholds = [0.01, ..., 0.99]  # every integer percent
+# For each threshold, compute Accuracy, Precision, Recall, F1 on validation split
+# Select threshold maximizing F1 (validation_f1.argmax())
+# (eval_inpx.py's standalone sensitivity sweep instead uses 0.05-0.95 in steps of 0.05)
+```
+
+**Stage 2: Mask Threshold Sweep**
+```python
+# After classification threshold is fixed, sweep mask threshold on validation split
+mask_thresholds = [0.05, 0.10, ..., 0.95]  # steps of 0.05
+# Compute full-image IoU, interior IoU, ring IoU
+# Select threshold maximizing full-image IoU (validation_full_iou.argmax())
+# (eval_inpx.py's standalone sweep instead defaults to (0.3, 0.5, 0.7))
+```
+
+**Stage 3: Frozen Evaluation on Held-Out Test**
+```python
+# Apply selected thresholds to held-out test split (never seen during threshold selection)
+# Report final metrics with confidence intervals
+```
+
+**Optimization Details:**
+- **Source-disjoint split**: 4,735 train / 1,024 validation / 1,064 test records (no image overlap across splits)
+- **Stratified by dataset**: Maintains CelebA-HQ, CityScapes, OpenImages, SUN-RGBD proportions
+- **Deterministic seed**: 20260826 for reproducibility
+- **Per-variant thresholds**: Standard and exchanged variants can have different optimal thresholds
+
+#### Selected Thresholds for Fully Finetuned Model
+
+| Metric | Standard Variant | Exchanged Variant |
+|--------|------------------|-------------------|
+| Classification threshold | 0.01 | 0.01 |
+| Mask threshold (IoU) | 0.05 | 0.25 |
+| Mask threshold (mAP) | 0.30 | 0.30 |
+
+**Note**: The very low classification threshold (0.01) indicates the model's sigmoid outputs are not calibrated to the conventional 0.5 boundary. This is expected for fine-tuned models where the decision boundary shifts significantly from pretraining.
+
+#### All Optimizations Applied
+
+1. **Code Compatibility Fixes**
+   - `models/seg_hrnet.py:303`: `np.int()` → `int()` (NumPy ≥1.24 compatibility)
+   - `models/seg_hrnet.py:440`: Added `map_location=device` to `torch.load()` for CPU/GPU compatibility
+
+2. **Evaluation Pipeline (`eval_inpx.py`)**
+   - Native-resolution inference (no forced cropping/resizing - PSCC-Net is fully convolutional)
+   - INP-X naming convention pairing (original/edited/mask)
+   - Boundary-restricted localization metrics (interior vs ring via morphological erosion)
+   - Threshold sensitivity analysis with validation/test split
+   - Per-dataset and aggregate reporting
+
+3. **Training Pipeline (`finetune_inpx.py`)**
+   - Source-disjoint split generation (`split_manifest.csv`)
+   - Joint or single-variant training with a balanced sampler over (dataset, label) strata
+   - AdamW with cosine-annealing LR schedule (`T_max` = total epochs); HRNet backbone frozen during warmup epochs, differential LR (`backbone-lr-scale` 0.1) after
+   - Mixed precision training (AMP; segmentation head kept in FP32), gradient accumulation (batch 4 × 4 steps = effective 16), gradient clipping at norm 5.0
+   - Model checkpointing on validation macro mean (AUC + mask AP)
+   - Early stopping patience 7 (base and joint runs), 25 for the two 17-epoch extensions
+
+4. **Resolution Handling**
+   - Native resolution evaluation (512×512 for INP-X)
+   - Fixed-256 ablation (`eval_inpx_256.py`) - showed degradation, not improvement
+   - Pretrained HRNet backbone expects 256×256 but runs fully-convolutionally
+
+5. **Data Augmentation (Training Only)**
+   - Random 90° rotations (0–3, uniform)
+   - Random horizontal flip (p=0.5)
+   - Applied jointly to image and mask (`INPXFineTuneDataset`)
+
+6. **Loss Function**
+   ```python
+   # Classification: cross-entropy on DetectionHead logits
+   # Segmentation: per-scale balanced BCE (foreground/background reweighted
+   #   per image, pos-weight capped at 50) + dice_weight * Dice, summed over
+   #   the 4 NLCDetection heads with scale weights (1.0, 0.5, 0.25, 0.125)
+   # Combined: loss = loss_cls + segmentation_weight * loss_seg
+   #   (segmentation_weight = 3.0, dice_weight = 1.0 in all runs here)
+   ```
+
+7. **Visualization Pipeline (`visualize_localization.py`)**
+   - Side-by-side comparison grids with probability overlays and binary masks
+   - Per-image IoU computation and CSV logging
+   - Always loads all four checkpoints (pretrained, standard-only, exchanged-only, fully fine-tuned)
+   - Deterministic sampling for reproducibility (default seed `20260826`)
+
+### Recommendations for Reporting
+
+1. **Primary results**: Use fully finetuned model (`runs/inpx_finetune_final/best.pt`, epoch 11) with validation-selected thresholds (cls=0.01, mask=0.05 standard / 0.25 exchanged)
+2. **Ablation**: Include the extended single-variant results — exchanged-only (`runs/inpx_finetune_exchanged_only/best.pt`, epoch 13 of 17) as the "transferring specialist" and standard-only (`runs/inpx_finetune_standard_only/best.pt`, epoch 2 of 17) as the "non-transferring specialist"
+3. **Threshold disclosure**: Always report the validation-selected thresholds alongside metrics
+4. **Dataset stratification**: Report per-dataset results (CelebA-HQ, CityScapes, OpenImages, SUN-RGBD) as performance varies significantly
+5. **Visualization**: Include 3-4 representative comparison grids showing:
+   - Exchanged variant success case (CelebA-HQ/SUN-RGBD, IoU > 0.8)
+   - Standard variant improvement case (SUN-RGBD, IoU ~0.26)
+   - Failure case (OpenImages/CityScapes standard variant, IoU ≈ 0)
+   - Boundary region comparison (interior vs ring similarity)

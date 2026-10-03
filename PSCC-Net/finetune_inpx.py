@@ -575,7 +575,7 @@ def main():
     optimizer = torch.optim.AdamW(parameters, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=args.epochs, eta_min=args.head_lr * 0.01)
-    scaler = torch.cuda.amp.GradScaler("cuda", enabled=amp_enabled)
+    scaler = torch.amp.GradScaler('cuda', enabled=amp_enabled)
 
     print('Evaluating bundled pretrained checkpoint on validation/test splits...')
     baseline_validation_rows = evaluate_records(
